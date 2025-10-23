@@ -42,7 +42,7 @@
 ---
 
 ### 系统架构图
-![架构图](./Spring-Netty-ZooKeeper/分布式RPC/Spring+netty+zookeeper.png)
+![架构图](./分布式RPC/Spring+netty+zookeeper.png)
 
 
 ## 核心技术栈与选型优势
