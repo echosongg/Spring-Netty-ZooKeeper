@@ -10,7 +10,15 @@
 - 多线程数据安全控制  
 
 适用于微服务架构中跨节点的服务交互场景（如用户数据远程存储、业务逻辑跨服务调用等）。
+## 项目演进版本说明
 
+项目包含两个前置演进版本，逐步构建核心 RPC 能力：
+pro-netty-rpc - Non-Spring-Simple-Version基础版本，仅实现 Netty 客户端与服务端的简单通信：通过手动编写 Netty 处理器（Handler）完成 TCP 连接建立、数据编解码及同步消息交互，不依赖 Spring 框架，核心逻辑为 “客户端发送字符串指令→服务端接收并返回固定响应”，是后续分布式 RPC 的网络通信基础。
+
+pro-netty-rpc - 用 command 实现简单的中介者模式 9-12进阶版本，引入 “命令（Command）+ 中介者（Medium）” 模式：服务端通过 command 标识区分不同请求类型（如 USER_SAVE、USER_QUERY），并由 Medium 类统一分发请求到对应业务处理逻辑，初步实现请求与处理的解耦。此版本未引入动态代理，客户端需手动构建包含 command 的请求对象，是后续 Spring 代理与分布式能力的过渡版本。
+
+核心版本：分布式 RPC 系统最终版本，整合 Spring、ZooKeeper/Curator、动态代理等技术，实现完整的分布式 RPC 能力：支持服务自动注册与发现、动态代理简化远程调用、权重负载均衡及服务上下线感知，是项目的核心实现。
+![Spring + Netty + ZooKeeper 架构图](Spring-Netty-ZooKeeper/分布式RPC/Spring+netty+zookeeper.png)
 ---
 
 ## 核心技术栈与选型优势
@@ -36,7 +44,7 @@
 **Step 1：通过 @RemoteInvoke 标记远程服务接口**
 
 客户端在服务接口字段上添加 @RemoteInvoke 注解，Spring 会自动为该接口创建动态代理，拦截所有方法调用：
-
+```java
 @Service
 public class BasicService {
     // @RemoteInvoke 标记：Spring 会为 UserRemote 创建代理对象
@@ -73,7 +81,7 @@ public class BasicService {
 InvokeProxy 实现 Spring 的 BeanPostProcessor，在客户端 Bean 初始化前扫描带有 @RemoteInvoke 的字段，为其生成 CGLIB 代理对象：
 
 
-
+```java
 @Component
 public class InvokeProxy implements BeanPostProcessor{
 
@@ -131,12 +139,13 @@ public class InvokeProxy implements BeanPostProcessor{
     }
 
 }
+```
 #### （2）服务端：基于 @Remote 与 Medium 中介者模式处理请求
 
 服务端通过 @Remote 标记可被远程调用的实现类，由 InitialMedium 初始化方法映射，最终通过 Media 反射调用业务逻辑。
 
 **Step 1：服务端实现类标记 @Remote**
-
+```java
 // @Remote 标记：声明该类方法可被远程调用
 @Remote
 public class UserRemoteImpl implements UserRemote{
@@ -157,7 +166,7 @@ public class UserRemoteImpl implements UserRemote{
 
 **Step 2：InitialMedium 初始化方法映射表**
 
-
+```java
 @Component
 public class InitialMedium implements BeanPostProcessor{
     @Override
@@ -179,6 +188,7 @@ public class InitialMedium implements BeanPostProcessor{
 
 **Step 3：Media 反射调用业务方法**
 
+```java
 public class Media {
     public static Map<String, BeanMethod> beanMap;
     static {
