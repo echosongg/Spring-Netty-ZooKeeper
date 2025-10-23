@@ -287,7 +287,9 @@ public class Media {
 
 2. 启动步骤
 启动ZooKeeper Server
+
 启动服务器端， 运行 - 分布式RPC\pro-user-core2\src\main\java\com\dxfx\server\SpringServer.java
+
 启动客户端，运行 - 分布式RPC\pro-basic\src\main\java\com\dxfx\pro_basic\controller\BasicController.java
 
 ## 参考资料
