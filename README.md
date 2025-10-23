@@ -68,7 +68,11 @@ public class BasicService {
 }
 ```
 ***代理的实现 扫描注解并生成代理***
+
+
 InvokeProxy 实现 Spring 的 BeanPostProcessor，在客户端 Bean 初始化前扫描带有 @RemoteInvoke 的字段，为其生成 CGLIB 代理对象：
+
+
 
 @Component
 public class InvokeProxy implements BeanPostProcessor{
@@ -234,32 +238,6 @@ public class Media {
   - Netty 使用主从 Reactor 模型；
   - Spring 事务管理确保数据库操作原子性。
 
-## 项目结构
-
-```plaintext
-Spring-Netty-ZooKeeper/
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   ├── com/dxfx/user/
-│   │   │   │   ├── remote/
-│   │   │   │   ├── service/
-│   │   │   │   └── model/
-│   │   │   ├── com/dxfx/pro_basic/
-│   │   │   │   └── service/
-│   │   │   ├── com/dxfx/netty/
-│   │   │   │   ├── annotation/
-│   │   │   │   ├── medium/
-│   │   │   │   ├── handler/
-│   │   │   │   └── util/
-│   │   │   └── com/xtwy/client/
-│   │   │       ├── core/
-│   │   │       └── param/
-│   │   └── resources/
-│   │       └── applicationContext.xml
-└── README.md
-```
-
 ## 快速启动与测试
 
 1. 环境项目配置如下
@@ -279,8 +257,4 @@ Spring-Netty-ZooKeeper/
 启动客户端，运行 - 分布式RPC\pro-basic\src\main\java\com\dxfx\pro_basic\controller\BasicController.java
 
 ## 参考资料
-- 项目视频笔记：ANU SharePoint 文档链接  
-- 核心技术文档：  
-  - Netty 官方文档：https://netty.io/wiki/index.html  
-  - ZooKeeper 官方文档：https://zookeeper.apache.org/doc/current/  
-  - FastJSON 文档：https://github.com/alibaba/fastjson
+- 项目视频笔记：https://anu365-my.sharepoint.com/personal/u7439250_anu_edu_au/_layouts/15/Doc.aspx?sourcedoc={a60ec8d3-9b40-475e-8c78-3c864819d8b4}&action=edit&wd=target%28%E9%A1%B9%E7%9B%AE.one%7C%2FMaven%7C045c9492-543e-4315-92fb-8ee4aec85947%2F%29&wdorigin=NavigationUrl
