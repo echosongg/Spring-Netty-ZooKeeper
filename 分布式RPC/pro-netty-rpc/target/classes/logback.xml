@@ -1,0 +1,29 @@
+<configuration>
+	<!-- 控制台输出配置 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+			<!-- 日志格式：时间 [线程名] 级别 类名 - 消息 -->
+            <pattern>%d{yyyy-MM-MM HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+	<!-- 全局日志级别：INFO（只输出 INFO 及以上级别，过滤 DEBUG） -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+	<!-- 过滤 ZooKeeper 的 DEBUG 日志（只输出 WARN 及以上） -->
+    <logger name="org.apache.zookeeper" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+	<!-- 过滤 Curator 的 DEBUG 日志（只输出 INFO 及以上，保留关键操作日志） -->
+    <logger name="org.apache.curator" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+	<!-- 过滤 Netty 的 DEBUG 日志（只输出 WARN 及以上） -->
+    <logger name="io.netty" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+</configuration>
