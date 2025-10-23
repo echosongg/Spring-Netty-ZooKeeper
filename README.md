@@ -10,16 +10,40 @@
 - 多线程数据安全控制  
 
 适用于微服务架构中跨节点的服务交互场景（如用户数据远程存储、业务逻辑跨服务调用等）。
-## 项目演进版本说明
+
+## 项目前置版本与演进过程
 
 项目包含两个前置演进版本，逐步构建核心 RPC 能力：
-pro-netty-rpc - Non-Spring-Simple-Version基础版本，仅实现 Netty 客户端与服务端的简单通信：通过手动编写 Netty 处理器（Handler）完成 TCP 连接建立、数据编解码及同步消息交互，不依赖 Spring 框架，核心逻辑为 “客户端发送字符串指令→服务端接收并返回固定响应”，是后续分布式 RPC 的网络通信基础。
 
-pro-netty-rpc - 用 command 实现简单的中介者模式 9-12进阶版本，引入 “命令（Command）+ 中介者（Medium）” 模式：服务端通过 command 标识区分不同请求类型（如 USER_SAVE、USER_QUERY），并由 Medium 类统一分发请求到对应业务处理逻辑，初步实现请求与处理的解耦。此版本未引入动态代理，客户端需手动构建包含 command 的请求对象，是后续 Spring 代理与分布式能力的过渡版本。
+### 1. **pro-netty-rpc - Non-Spring-Simple-Version**
+基础版本，仅实现 Netty 客户端与服务端的简单通信：  
+通过手动编写 Netty 处理器（Handler）完成 TCP 连接建立、数据编解码及同步消息交互，不依赖 Spring 框架。  
+核心逻辑为 **“客户端发送字符串指令 → 服务端接收并返回固定响应”**，  
+是后续分布式 RPC 的网络通信基础。
 
-核心版本：分布式 RPC 系统最终版本，整合 Spring、ZooKeeper/Curator、动态代理等技术，实现完整的分布式 RPC 能力：支持服务自动注册与发现、动态代理简化远程调用、权重负载均衡及服务上下线感知，是项目的核心实现。
-![Spring + Netty + ZooKeeper 架构图](Spring-Netty-ZooKeeper/分布式RPC/Spring+netty+zookeeper.png)
 ---
+
+### 2. **pro-netty-rpc - 用 command 实现简单的中介者模式 (9-12)**
+进阶版本，引入 **命令（Command）+ 中介者（Medium）** 模式：  
+服务端通过 `command` 标识区分不同请求类型（如 `USER_SAVE`、`USER_QUERY`），并由 `Medium` 类统一分发请求到对应业务处理逻辑，初步实现请求与处理的解耦。  
+此版本未引入动态代理，客户端需手动构建包含 command 的请求对象，是后续 Spring 代理与分布式能力的过渡版本。
+
+---
+
+### 3. **核心版本：分布式 RPC 系统最终实现**
+整合 **Spring、ZooKeeper/Curator、动态代理** 等技术，实现完整的分布式 RPC 能力：  
+- 支持服务自动注册与发现；  
+- 基于动态代理简化远程调用；  
+- 支持权重负载均衡；  
+- 自动感知服务上下线。  
+
+是整个项目的核心实现版本。
+
+---
+
+### 系统架构图
+![架构图](./Spring-Netty-ZooKeeper/分布式RPC/Spring+netty+zookeeper.png)
+
 
 ## 核心技术栈与选型优势
 
@@ -246,7 +270,6 @@ public class Media {
 - **多线程安全**：
   - Media.beanMap 通过单例 + Spring 管理保证线程安全；
   - Netty 使用主从 Reactor 模型；
-  - Spring 事务管理确保数据库操作原子性。
 
 ## 快速启动与测试
 
