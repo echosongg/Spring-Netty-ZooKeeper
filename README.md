@@ -5,9 +5,8 @@
 **Spring-Netty-ZooKeeper** 是一款面向分布式环境的轻量级 **RPC 通信系统**，核心技术栈整合 **Spring 框架**、**Netty 网络通信**、**ZooKeeper 服务协调** 与 **Curator 客户端**，旨在解决分布式场景下服务间的 **高效远程调用**、**动态服务管理** 与 **智能负载均衡** 问题。  
 
 系统支持以下特性：
-- 服务动态上下线感知  
-- 按权重分配请求的负载均衡机制
-- 动态代理  
+- 服务动态上下线感知和按权重分配请求的负载均衡机制
+- 动态代理和远程调用
 - 多线程数据安全控制
 
 适用于微服务架构中跨节点的服务交互场景（如用户数据远程存储、业务逻辑跨服务调用等）。
@@ -256,17 +255,130 @@ public class Media {
 
 ### 2. ZooKeeper 服务管理与负载均衡
 
+```text
+Server 节点注册 (ZK: /netty)
+        │
+        ├──> 客户端启动：ServerWatcher 监听 /netty 子节点
+        │
+ZK 子节点变化（上线/下线/权重变化）
+        │
+        ├──> ServerWatcher.process():
+        │       1) 重新注册 watcher（一次性）
+        │       2) 拉取最新子节点列表
+        │       3) 解析 ip/port/weight → 构建“权重地址池”
+        │       4) 清空旧连接池 → 逐个地址建连 → 加入 ChannelManager
+        │
+请求到达
+        │
+        └──> ChannelManager.get(position)：按位置轮询返回活跃连接
+```
 **（1）服务注册与发现**
-- 服务端启动时，将自身 IP、端口及权重信息（如 `192.168.1.100#8080#5`）注册到 ZooKeeper 的 `/rpc/services` 节点下；
-- 客户端监听该节点，动态维护服务列表。
+- 服务端启动时，将自身 IP、端口及权重信息（如 `192.168.1.100#8080#5`）注册到 ZooKeeper 的 `/netty` 节点下；
+- 客户端**监听**该节点，**动态维护**服务列表。
 
+  
 **（2）动态上下线感知**
-- 服务端下线触发 Watcher，客户端自动移除无效节点；
-- 新节点上线时，客户端自动建立连接。
+- **ServerWatcher**：实现 `CuratorWatcher`，监听 `/netty` 子节点变化，**重建地址池**与**连接池**。
+- **ChannelManager**：维护 Netty `ChannelFuture` 连接列表，并提供**按位置轮询**获取连接的能力。
+
+### `ServerWatcher`：监听 & 重建
+```java
+public class ServerWatcher implements CuratorWatcher{
+
+	@Override
+	public void process(WatchedEvent event) throws Exception {
+		// 1. 重新获取 ZooKeeper 客户端（确保连接有效）
+		CuratorFramework client = ZookeeperFactory.create();
+		//发生事件的服务器path
+		String path = event.getPath();
+		// 3. 重新注册监听器（ZooKeeper 的 watch 是一次性的，需重新注册才能持续监听）
+		client.getChildren().usingWatcher(this).forPath(path);
+		// 4. 重新获取最新的服务端节点列表
+		List<String> serverPaths = client.getChildren().forPath(path);
+		// 5. 清空旧的服务地址集合，重新存入最新的服务地址（IP+端口）
+		ChannelManager.realServerPath.clear(); // 先清空旧数据
+//		来源：客户端从 serverPath 中解析、提取出的 “有用信息”，即 服务端的 IP 和端口。
+//		例如，从 192.168.1.100#8080#0000000001 中拆分出 192.168.1.100#8080，存入 ChannelManager.realServerPath（HashSet 类型）。
+		for(String serverPath: serverPaths) {
+			String[] str = serverPath.split("#");
+			int weight = Integer.valueOf(str[2]);
+			if(weight > 0) {
+				//有多少权重
+				for(int w= 0;w<weight;w++) {
+					ChannelManager.realServerPath.add(str[0]+"#"+str[1]);
+					ChannelFuture channelFuture = TcpClient.b.connect(str[0], Integer.valueOf(str[1]));
+					ChannelManager.addChannel(channelFuture);
+				}
+				//连接
+			//host
+			}
+			ChannelManager.realServerPath.add(str[0]+"#"+str[1]);
+
+		}
+		ChannelManager.clear();// 先清空旧数据
+		// 6. 清空旧的连接列表，重新建立与所有最新服务端的连接
+		for(String realServer: ChannelManager.realServerPath) {
+			String[] str = realServer.split("#");
+			//host
+			String host = str[0];
+			int port = Integer.valueOf(str[1]);
+			// 建立新连接并加入管理
+				ChannelFuture channelFuture = TcpClient.b.connect(host, port);
+				ChannelManager.addChannel(channelFuture);
+		}
+
+		}
+	}
+```
+
+### `ChannelManager`：连接池与轮询
+
+```java
+//用来管理客户端的连接
+public class ChannelManager {
+	static AtomicInteger position = new AtomicInteger(0);
+	static CopyOnWriteArrayList<String> realServerPath = new CopyOnWriteArrayList<String>();
+	public static CopyOnWriteArrayList<ChannelFuture> channelFutures = new CopyOnWriteArrayList<>();
+	
+	public static void removeChannel(ChannelFuture channel) {
+		channelFutures.remove(channel);
+		
+	}
+	
+	public static void addChannel(ChannelFuture channel) {
+		channelFutures.add(channel);
+		
+	}
+	public static void clear() {
+		channelFutures.clear();
+		
+	}
+
+	public static ChannelFuture get(AtomicInteger i) {
+		int size = channelFutures.size();
+		ChannelFuture channel = null;
+		if(i.get()> size) {
+			channel = channelFutures.get(0);
+			ChannelManager.position = new AtomicInteger(1);
+		}else {
+			channel = channelFutures.get(i.getAndIncrement());
+		}
+		//如果链路不活跃，拿下一个链路并且移除掉这个链路
+		if(!channel.channel().isActive()) {
+			channelFutures.remove(channel);
+			return get(position);
+		}
+		return channel;
+	}
+}
+```
 
 **（3）权重负载均衡**
-- 根据权重生成地址池，按比例随机分配请求。
+- **权重地址池构建**：服务端的 `weight` 决定其 `ip#port` 在地址池中的**重复次数**；
+- **请求分配**：`ChannelManager.get(position)` 按顺序从连接池中取连接（可视作“按权重轮询”），长期来看**按权重比例**分摊请求；
+- **效果**：例如 A:5、B:3，则在大量请求下，A≈5/8，B≈3/8。
 
+---
 ### 3. 数据序列化与多线程安全
 - **JSON 序列化**：采用 FastJSON 进行请求 / 响应的序列化与反序列化。
 - **多线程安全**：
