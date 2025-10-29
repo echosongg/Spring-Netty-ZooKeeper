@@ -379,11 +379,116 @@ public class ChannelManager {
 - **效果**：例如 A:5、B:3，则在大量请求下，A≈5/8，B≈3/8。
 
 ---
-### 3. 数据序列化与多线程安全
-- **JSON 序列化**：采用 FastJSON 进行请求 / 响应的序列化与反序列化。
-- **多线程安全**：
-  - Media.beanMap 通过单例 + Spring 管理保证线程安全；
-  - Netty 使用主从 Reactor 模型；
+### 3. 多线程数据安全控制（主线程 - 从线程交互）
+
+系统采用 **“并发容器 + 显式锁/条件队列（Lock + Condition）”** 的方式完成一次 RPC 请求的**主/从线程通信**：  
+- **主线程**：发起请求后，通过 `DefaultFuture#get()` 阻塞等待结果；  
+- **从线程**（如 Netty I/O 线程）：收到服务端响应后，回填结果并 `signal()` 唤醒主线程。
+
+---
+
+#### （1）主线程：基于 `DefaultFuture` 的阻塞等待
+
+**Step 1：构造并注册等待器（按请求 ID 建立映射）**
+
+> 将本次请求的等待器 `DefaultFuture` 注册进全局并发表 `ConcurrentHashMap<Long, DefaultFuture>`，供从线程按 `response.getId()` 精确定位。
+
+```java
+public class DefaultFuture {
+    public final static ConcurrentHashMap<Long, DefaultFuture> allDefaultFuture = new ConcurrentHashMap<>();
+
+    // 用于主/从线程在同一 Future 上通信的显式锁与条件队列
+    final Lock lock = new ReentrantLock();
+    public Condition condition = lock.newCondition();
+    private Response response;
+
+    // 构造函数：按 requestId 注册等待器
+    public DefaultFuture(ClientRequest request) {
+        allDefaultFuture.put(request.getId(), this);
+    }
+    // ...
+}
+```
+
+**Step 2：主线程 `get()` → 上锁 + 条件等待（while 防伪唤醒）**
+
+> 主线程进入条件队列阻塞；当从线程 `signal()` 后被唤醒，重新争抢同一把锁并读取结果。
+
+```java
+// 主线程获取数据，首先要等待从线程给它结果
+public Response get() {
+    lock.lock();
+    try {
+        System.out.println("尝试开始拿从线程的数据");
+        // 以 while 防止 spurious wakeup（伪唤醒）
+        while (!done()) {
+            condition.await();
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+    } finally {
+        lock.unlock();
+    }
+    return this.response;
+}
+```
+
+> 说明：`done()` 的语义通常是“是否已有 `response`”（例如 `response != null`）。你的代码中未展示 `done()`/`setResponse()` 的具体实现，这里按常规语义理解。
+
+---
+
+#### （2）从线程：发布响应并唤醒主线程
+
+**Step 1：按响应 ID 定位等待器**
+
+> 收到服务端响应后，从线程通过 `response.getId()` 在 `allDefaultFuture` 中找到对应的 `DefaultFuture`。
+
+**Step 2：回填结果 + `signal()` 精确唤醒**
+
+> 在**同一把锁**内写入 `response` 并 `signal()`；随后从 `map` 中移除，避免内存泄漏。
+
+```java
+// 从线程中调用（例如 Netty 的 handler 中）
+public static void recieve(Response response) {
+    DefaultFuture df = allDefaultFuture.get(response.getId());
+    System.out.println("从线程开始");
+    if (df != null) {
+        Lock lock = df.lock;
+        lock.lock();
+        try {
+            df.setResponse(response);
+            // 唤醒主线程来拿结果
+            df.condition.signal();
+            // 主线程已经拿到 response 那么我们可以 remove 掉了
+            allDefaultFuture.remove(df);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+
+---
+
+
+#### 线程通信模型：`Lock` + `Condition`
+- **等待端（主线程）**：`lock.lock()` → `while (!done()) condition.await()` → 被 `signal()` 唤醒后再次检查条件 → 读取结果 → `unlock()`。
+- **通知端（从线程）**：`lock.lock()` → `setResponse()` → `condition.signal()` **精确唤醒一个等待者** → `unlock()`。
+- **可见性（happens-before）**：  
+  - 从线程在持有同一把锁时写入 `response` 并 `signal()`；  
+  - 主线程从 `await()` 返回后需再次获得**同一把锁**，此时对 `response` 的写入对主线程**可见**。
+
+时序示意：
+
+```
+主线程: lock → while(!done) await() ────────────────┐
+                                                  │ (等待)
+从线程:          lock → setResponse → signal → unlock
+主线程: <─── 被唤醒 ────────────────────────────────┘ → 读取 response → unlock
+```
 
 ## 快速启动与测试
 
