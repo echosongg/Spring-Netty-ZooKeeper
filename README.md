@@ -281,7 +281,7 @@ ZK 子节点变化（上线/下线/权重变化）
 - **ServerWatcher**：实现 `CuratorWatcher`，监听 `/netty` 子节点变化，**重建地址池**与**连接池**。
 - **ChannelManager**：维护 Netty `ChannelFuture` 连接列表，并提供**按位置轮询**获取连接的能力。
 
-### `ServerWatcher`：监听 & 重建
+**`ServerWatcher`：监听 & 重建**
 ```java
 public class ServerWatcher implements CuratorWatcher{
 
@@ -331,7 +331,7 @@ public class ServerWatcher implements CuratorWatcher{
 	}
 ```
 
-### `ChannelManager`：连接池与轮询
+**`ChannelManager`：连接池与轮询**
 
 ```java
 //用来管理客户端的连接
